@@ -11,26 +11,26 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Type-only: brings the `ctx.typert` Context merge into this program.
 import type {} from '@deepseek-ai/dsh-typert-registry'
-// Type-only: brings the `ctx.settings` and `ctx.agents` Context merges in.
-import type {} from '@deepseek-ai/dsh-settings'
+// Type-only: brings the `ctx.agents` Context merge in.
 import type {} from '@deepseek-ai/dsh-agent'
 import { AtFileRuntime } from './runtime.ts'
 import { TYPERT_MANIFEST } from './typert.ts'
-import { registerAtFileSettings } from './settings.ts'
+import { createAtFileSettingsStore, fileIgnoreRuleSchema, workspaceIgnoreFilesSchema } from './settings.ts'
 import { mentionPreStep } from './mention.ts'
 import {
   DEFAULT_IGNORE_DIRS,
+  DEFAULT_IGNORE_FILES,
   normalizeIgnoreFiles,
   normalizeWorkspaceIgnoreFiles,
 } from './defaults.ts'
-import type { AtFileSettingsUpdate } from './contract.ts'
+import type { AtFileSettingsUpdate, FileIgnoreRuleInput, WorkspaceIgnoreFiles } from './contract.ts'
 import type { ResolvedConfig } from './types.ts'
 
 /** Cordis plugin name (the Loader entry and client bundle id). */
 export const name = 'dsh-at-file'
 
-/** Services required before load: the Typert registry, the settings provider, and the agent registry. */
-export const inject = ['typert', 'settings', 'agents']
+/** Services required before load: the Typert registry and the agent registry. */
+export const inject = ['typert', 'agents']
 
 export { DEFAULT_IGNORE_DIRS, DEFAULT_IGNORE_FILES } from './defaults.ts'
 
@@ -40,6 +40,16 @@ export interface Config {
   maxIndexedFiles: number
   /** Directory basenames the index walk skips entirely. */
   ignoreDirs: string[]
+  /** Whether the @file surface is enabled; false hides picker, dock, and reference injection. */
+  enabled: boolean
+  /** Global Exact and Regex basename filters; legacy strings are insensitive Exact rules. */
+  ignoreFiles: FileIgnoreRuleInput[]
+  /** Whether an empty global filter list was explicitly saved by a current client. */
+  ignoreFilesConfigured: boolean
+  /** Workspace-specific filters added to the global filters. */
+  workspaceIgnoreFiles: WorkspaceIgnoreFiles[]
+  /** Whether @ tokens inserted through paste stay ordinary text. */
+  ignorePastedMentions: boolean
 }
 
 /**
@@ -47,10 +57,19 @@ export interface Config {
  * the profile patch. The inferred schema type keeps the callable form accepting
  * partial input, so `Config({})` yields the defaults (what the Loader does
  * for Loader compositions).
+ *
+ * dsh 0.2 removed imperative settings namespaces, so the former `at-file`
+ * settings section lives here as ordinary Config fields: schema-derived
+ * forms, editable from the profile patch with Loader hot-reload.
  */
 export const Config = z.object({
   maxIndexedFiles: z.natural().min(1).default(5000),
   ignoreDirs: z.array(z.string()).default([...DEFAULT_IGNORE_DIRS]),
+  enabled: z.boolean().default(true),
+  ignoreFiles: z.array(fileIgnoreRuleSchema).default([...DEFAULT_IGNORE_FILES]),
+  ignoreFilesConfigured: z.boolean().default(false),
+  workspaceIgnoreFiles: workspaceIgnoreFilesSchema.default([]),
+  ignorePastedMentions: z.boolean().default(true),
 })
 
 /**
@@ -60,9 +79,17 @@ export const Config = z.object({
  */
 export function apply(ctx: Context, config?: Config): void {
   const resolved: ResolvedConfig = Config(config ?? {})
-  // The durable enable switch: the runtime and the boundary read its live
-  // value per call, so toggling it in the Web settings takes effect immediately.
-  const settings = registerAtFileSettings(ctx)
+  // The durable enable switch: the store seeds from the resolved Config and
+  // the runtime reads its live value per call, so `atFile/updateSettings`
+  // takes effect immediately. Durable edits go through the plugin Config in
+  // the profile patch (applied on Loader reload).
+  const settings = createAtFileSettingsStore({
+    enabled: resolved.enabled,
+    ignoreFiles: resolved.ignoreFiles,
+    ignoreFilesConfigured: resolved.ignoreFilesConfigured,
+    workspaceIgnoreFiles: resolved.workspaceIgnoreFiles,
+    ignorePastedMentions: resolved.ignorePastedMentions,
+  })
   const readSettings = () => settings.get()
   const writeSettings = async (update: AtFileSettingsUpdate) => {
     if (update.field === 'enabled') {

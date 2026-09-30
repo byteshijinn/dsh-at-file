@@ -39,7 +39,6 @@ function props(over: {
   ignoreFilesConfigured?: boolean
   workspaceIgnoreFiles?: readonly WorkspaceIgnoreFiles[]
   workspaces?: readonly WorkspaceStub[]
-  currentCwd?: string
   recentWorkspaceId?: string
   setEnabled?: (enabled: boolean) => Promise<void>
   setIgnorePastedMentions?: (ignore: boolean) => Promise<void>
@@ -60,12 +59,8 @@ function props(over: {
         ignorePastedMentions: over.ignorePastedMentions ?? true,
       }
   const items = [...over.workspaces ?? []]
-  const sessionState = over.currentCwd === undefined
-    ? { current: undefined, byId: {} }
-    : { current: 'current', byId: { current: { cwd: over.currentCwd } } }
   const stub = {
     useScope: <T,>(selector: (snapshot: { value?: AtFileSettings }) => T): T => selector({ value }),
-    useSessions: <T,>(selector: (snapshot: typeof sessionState) => T): T => selector(sessionState),
     useWorkspaces: <T,>(selector: (snapshot: {
       items: readonly WorkspaceStub[]
       recentWorkspaceId?: string
@@ -186,7 +181,6 @@ describe('AtFileSection', () => {
       ignoreFiles: ['desktop.ini'],
       workspaceIgnoreFiles: [{ workspace: '/work/one', ignoreFiles: ['local.tmp'] }],
       workspaces,
-      currentCwd: '/work/one',
       setWorkspaceIgnoreFiles,
     })} />)
     click(button(container, zh['settings.workspace']))
@@ -229,7 +223,7 @@ describe('AtFileSection', () => {
   it('retains the workspace scope and selection across section remounts', () => {
     const viewState: AtFileSectionViewState = { filterScope: 'global', selectedWorkspace: '' }
     const workspaces = [workspace('one', '/work/one', 'One'), workspace('two', '/work/two', 'Two')]
-    const first = mount(<AtFileSection {...props({ workspaces, currentCwd: '/work/one', viewState })} />)
+    const first = mount(<AtFileSection {...props({ workspaces, viewState })} />)
     click(button(first.container, zh['settings.workspace']))
     const select = first.container.querySelector('select') as HTMLSelectElement
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
@@ -239,7 +233,7 @@ describe('AtFileSection', () => {
     })
     first.root.unmount()
 
-    const second = mount(<AtFileSection {...props({ workspaces, currentCwd: '/work/one', viewState })} />)
+    const second = mount(<AtFileSection {...props({ workspaces, viewState })} />)
     expect(button(second.container, zh['settings.workspace']).getAttribute('aria-selected')).toBe('true')
     expect((second.container.querySelector('select') as HTMLSelectElement).value).toBe('/work/two')
     second.root.unmount()
@@ -248,7 +242,7 @@ describe('AtFileSection', () => {
   it('reselects an available workspace when the previous choice disappears', () => {
     const one = workspace('one', '/work/one', 'One')
     const two = workspace('two', '/work/two', 'Two')
-    const initial = props({ workspaces: [one, two], currentCwd: '/work/one' })
+    const initial = props({ workspaces: [one, two] })
     const { root, container } = mount(<AtFileSection {...initial} />)
     click(button(container, zh['settings.workspace']))
     const select = container.querySelector('select') as HTMLSelectElement
@@ -257,7 +251,7 @@ describe('AtFileSection', () => {
       setter?.call(select, '/work/two')
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    flushSync(() => { root.render(<AtFileSection {...props({ workspaces: [one], currentCwd: '/work/one' })} />) })
+    flushSync(() => { root.render(<AtFileSection {...props({ workspaces: [one] })} />) })
     expect((container.querySelector('select') as HTMLSelectElement).value).toBe('/work/one')
     root.unmount()
   })
@@ -356,7 +350,7 @@ describe('AtFileSection', () => {
   })
 
   it('disables workspace editing when the last workspace disappears', () => {
-    const { root, container } = mount(<AtFileSection {...props({ currentCwd: '/work/one' })} />)
+    const { root, container } = mount(<AtFileSection {...props({ workspaces: [workspace('one', '/work/one', 'One')] })} />)
     click(button(container, zh['settings.workspace']))
     flushSync(() => { root.render(<AtFileSection {...props()} />) })
     expect((container.querySelector('select') as HTMLSelectElement).disabled).toBe(true)
@@ -369,8 +363,8 @@ describe('AtFileSection', () => {
     expect(parseIgnoreFile('   ')).toBeUndefined()
   })
 
-  it('labels a filesystem root used as the current workspace', () => {
-    const { root, container } = mount(<AtFileSection {...props({ currentCwd: '/' })} />)
+  it('labels a filesystem root listed as a workspace', () => {
+    const { root, container } = mount(<AtFileSection {...props({ workspaces: [workspace('root', '/', '/')] })} />)
     click(button(container, zh['settings.workspace']))
     expect(container.querySelector('option')?.textContent).toBe('/ - /')
     root.unmount()

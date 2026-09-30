@@ -41,15 +41,20 @@ interface WorkspaceOption {
   title: string
 }
 
+/**
+ * Minimal workspace-list shape for the harness selector hook. dsh 0.2 keeps
+ * the canonical WorkspaceSnapshot type in a package this plugin does not
+ * install, so the section declares the two fields it reads instead.
+ */
+interface WorkspaceListSnapshot {
+  readonly items: readonly { readonly path: string; readonly title: string; readonly workspaceId?: string }[]
+  readonly recentWorkspaceId?: string
+}
+
 /** Trim one legacy exact basename; retained for callers using the old helper. */
 export function parseIgnoreFile(value: string): string | undefined {
   const normalized = normalizeIgnoreRule(value)
   return normalized?.kind === 'exact' ? normalized.pattern : undefined
-}
-
-function workspaceTitle(path: string): string {
-  const trimmed = path.replace(/[\\/]+$/u, '')
-  return trimmed.split(/[\\/]/u).pop() || path
 }
 
 function rulePattern(value: FileIgnoreRuleInput): string {
@@ -99,7 +104,6 @@ function RemoveIcon(): ReactElement {
 /** Render the enable switch and scoped file-filter manager. */
 export function AtFileSection({
   useScope,
-  useSessions,
   useWorkspaces,
   viewState,
   setEnabled,
@@ -115,23 +119,15 @@ export function AtFileSection({
     ? DEFAULT_IGNORE_FILES
     : resolvedGlobalIgnoreFiles(settings))
   const workspaceRules = settings?.workspaceIgnoreFiles ?? []
-  const workspaces = useWorkspaces(snapshot => snapshot.items)
-  const recentWorkspaceId = useWorkspaces(snapshot => (
-    snapshot as typeof snapshot & { readonly recentWorkspaceId?: string }
-  ).recentWorkspaceId)
-  const currentCwd = useSessions(snapshot => {
-    const current = snapshot.current
-    return current === undefined ? undefined : snapshot.byId[current]?.cwd
-  })
-  const workspaceOptions = useMemo<WorkspaceOption[]>(() => {
-    const rows = workspaces.map(workspace => ({ path: workspace.path, title: workspace.title }))
-    if (currentCwd !== undefined && !rows.some(row => workspacePathKey(row.path) === workspacePathKey(currentCwd))) {
-      rows.unshift({ path: currentCwd, title: workspaceTitle(currentCwd) })
-    }
-    return rows
-  }, [currentCwd, workspaces])
-  const preferredWorkspace = currentCwd
-    ?? workspaces.find(workspace => workspace.workspaceId === recentWorkspaceId)?.path
+  const workspaces = useWorkspaces((snapshot: WorkspaceListSnapshot) => snapshot.items)
+  const recentWorkspaceId = useWorkspaces((snapshot: WorkspaceListSnapshot) => snapshot.recentWorkspaceId)
+  // dsh 0.2 no longer supplies session hooks to root-scoped settings sections,
+  // so there is no current-session cwd preselection; the workspace picker
+  // starts from the most recently used (or first listed) workspace instead.
+  const workspaceOptions = useMemo<WorkspaceOption[]>(() => (
+    workspaces.map(workspace => ({ path: workspace.path, title: workspace.title }))
+  ), [workspaces])
+  const preferredWorkspace = workspaces.find(workspace => workspace.workspaceId === recentWorkspaceId)?.path
     ?? workspaceOptions[0]?.path
     ?? ''
 

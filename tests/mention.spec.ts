@@ -88,13 +88,16 @@ describe('expandMentions', () => {
   })
 
   it('escapes a referenced path attribute', async () => {
+    // Windows forbids `"<>` in file names; `&` exercises the same escaper there.
+    const name = process.platform === 'win32' ? 'a&b\'.txt' : 'a&b".txt'
+    const escaped = process.platform === 'win32' ? 'a&amp;b\'.txt' : 'a&amp;b&quot;.txt'
     const root = await mkdtemp(join(tmpdir(), 'dsh-at-file-mention-'))
-    await writeFile(join(root, 'a&b".txt'), 'x')
+    await writeFile(join(root, name), 'x')
     try {
-      const injections = await expandMentions([user('read @a&b".txt')], root, new AbortController().signal)
+      const injections = await expandMentions([user(`read @${name}`)], root, new AbortController().signal)
       expect(injections[0]!.content[0]).toEqual({
         type: 'text',
-        text: '<workspace-reference path="a&amp;b&quot;.txt" kind="file" />',
+        text: `<workspace-reference path="${escaped}" kind="file" />`,
       })
     } finally {
       await rm(root, { recursive: true, force: true })

@@ -91,4 +91,6 @@ if (!clientBundle.includes('@deepseek-ai/dsh-client-store')
 }
 
 import { execFileSync } from 'node:child_process'
-execFileSync('node_modules/.bin/tsc', ['-p', 'tsconfig.json'], { stdio: 'inherit' })
+// Run the TypeScript compiler through node directly: pnpm's bin shims are
+// not spawnable portably across platforms (POSIX symlinks vs Windows .cmd).
+execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'], { stdio: 'inherit' })

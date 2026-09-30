@@ -24,4 +24,4 @@ export type AtFileSectionProps = PropsRuntime<'settings.section'> & InjectFace<A
 /** Trim one legacy exact basename; retained for callers using the old helper. */
 export declare function parseIgnoreFile(value: string): string | undefined;
 /** Render the enable switch and scoped file-filter manager. */
-export declare function AtFileSection({ useScope, useSessions, useWorkspaces, viewState, setEnabled, setIgnorePastedMentions, setIgnoreFiles, setWorkspaceIgnoreFiles, t, }: AtFileSectionProps): import("react").JSX.Element;
+export declare function AtFileSection({ useScope, useWorkspaces, viewState, setEnabled, setIgnorePastedMentions, setIgnoreFiles, setWorkspaceIgnoreFiles, t, }: AtFileSectionProps): import("react").JSX.Element;

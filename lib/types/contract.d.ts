@@ -152,5 +152,14 @@ export declare const atFileSettingsUpdateSchema: z.ZodDiscriminatedUnion<[z.ZodR
     field: z.ZodLiteral<"ignorePastedMentions">;
     value: z.ZodBoolean;
 }, z.core.$strip>>], "field">;
+/** Wire codec: one workspace entry list (file or directory entries). */
+export declare const fileEntryArraySchema: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+    path: z.ZodString;
+    relative: z.ZodString;
+    kind: z.ZodEnum<{
+        file: "file";
+        dir: "dir";
+    }>;
+}, z.core.$strip>>>;
 /** The atFile Remote namespace's strict invocation descriptors. */
 export declare const AT_FILE_INVOCATIONS: readonly InvocationDescriptor[];

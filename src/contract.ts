@@ -109,6 +109,9 @@ export const atFileSettingsUpdateSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('ignorePastedMentions'), value: z.boolean() }).readonly(),
 ])
 
+/** Wire codec: one workspace entry list (file or directory entries). */
+export const fileEntryArraySchema = z.array(fileEntrySchema)
+
 /** The atFile Remote namespace's strict invocation descriptors. */
 export const AT_FILE_INVOCATIONS: readonly InvocationDescriptor[] = [
   {
@@ -125,14 +128,16 @@ export const AT_FILE_INVOCATIONS: readonly InvocationDescriptor[] = [
         lookup: 'agent',
         // The type symbol must equal the agent lookup provider's wire identity
         // exactly — the gateway's strict path rejects a mismatched symbol.
-        codec: { mode: 'strict', typeSymbol: '@deepseek-ai/dsh-session/types#SessionId', schema: sessionIdSchema },
+        // dsh 0.2 additionally requires a create() factory materializing the
+        // boundary schema; zod schemas satisfy TypertSchema via .parse().
+        codec: { mode: 'strict', typeSymbol: '@deepseek-ai/dsh-session/types#SessionId', create: () => sessionIdSchema },
       },
     ],
     cancellation: { parameter: 'signal' },
     result: {
       mode: 'strict',
       typeSymbol: 'dsh-at-file#FileEntry[]',
-      schema: z.array(fileEntrySchema),
+      create: () => fileEntryArraySchema,
     },
   },
   {
@@ -145,7 +150,7 @@ export const AT_FILE_INVOCATIONS: readonly InvocationDescriptor[] = [
     result: {
       mode: 'strict',
       typeSymbol: 'dsh-at-file#AtFileSettings',
-      schema: atFileSettingsSchema,
+      create: () => atFileSettingsSchema,
     },
   },
   {
@@ -162,14 +167,14 @@ export const AT_FILE_INVOCATIONS: readonly InvocationDescriptor[] = [
         codec: {
           mode: 'strict',
           typeSymbol: 'dsh-at-file#AtFileSettingsUpdate',
-          schema: atFileSettingsUpdateSchema,
+          create: () => atFileSettingsUpdateSchema,
         },
       },
     ],
     result: {
       mode: 'strict',
       typeSymbol: 'dsh-at-file#AtFileSettings',
-      schema: atFileSettingsSchema,
+      create: () => atFileSettingsSchema,
     },
   },
 ]

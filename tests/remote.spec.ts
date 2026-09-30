@@ -7,6 +7,16 @@
 import { describe, expect, it } from 'vitest'
 import { AT_FILE_REMOTE } from '../src/client/remote.ts'
 
+/**
+ * Materialize a strict codec's boundary schema. dsh 0.2 codecs expose a
+ * create() factory instead of a schema field; the zod schemas behind the
+ * factories satisfy the boundary parse contract.
+ */
+function strictSchema(codec: { readonly mode: string; readonly create?: () => { parse(value: unknown): unknown } }): { parse(value: unknown): unknown } {
+  if (codec.mode !== 'strict' || typeof codec.create !== 'function') throw new Error('expected a strict codec with a create() factory')
+  return codec.create()
+}
+
 describe('AT_FILE_REMOTE', () => {
   it('owns search and the plugin settings endpoints', () => {
     expect(AT_FILE_REMOTE.package).toBe('dsh-at-file')
@@ -34,7 +44,7 @@ describe('AT_FILE_REMOTE', () => {
     expect(update.invocation).toEqual({ kind: 'direct' })
     expect(update.parameters).toHaveLength(1)
     expect(update.parameters[0]).toMatchObject({ name: 'update', wire: 'update', source: 'json' })
-    const schema = update.parameters[0]!.codec.schema as { parse(value: unknown): unknown }
+    const schema = strictSchema(update.parameters[0]!.codec)
     expect(schema.parse({ field: 'enabled', value: false })).toEqual({ field: 'enabled', value: false })
     expect(schema.parse({ field: 'ignorePastedMentions', value: false }))
       .toEqual({ field: 'ignorePastedMentions', value: false })
@@ -60,7 +70,7 @@ describe('AT_FILE_REMOTE', () => {
   })
 
   it('search codecs accept host entries (files and directories) and reject malformed rows', () => {
-    const schema = AT_FILE_REMOTE.descriptors[0]!.result.schema as { parse(value: unknown): unknown }
+    const schema = strictSchema(AT_FILE_REMOTE.descriptors[0]!.result)
     expect(schema.parse([{ path: '/ws/a.ts', relative: 'a.ts', kind: 'file' }, { path: '/ws/src', relative: 'src', kind: 'dir' }]))
       .toEqual([{ path: '/ws/a.ts', relative: 'a.ts', kind: 'file' }, { path: '/ws/src', relative: 'src', kind: 'dir' }])
     expect(() => schema.parse([{ path: '/ws/a.ts', relative: 'a.ts' }])).toThrow()
@@ -69,7 +79,7 @@ describe('AT_FILE_REMOTE', () => {
   })
 
   it('settings codecs reject incomplete resolved sections', () => {
-    const schema = AT_FILE_REMOTE.descriptors[1]!.result.schema as { parse(value: unknown): unknown }
+    const schema = strictSchema(AT_FILE_REMOTE.descriptors[1]!.result)
     expect(schema.parse({ enabled: true, ignoreFiles: [], workspaceIgnoreFiles: [] }))
       .toEqual({
         enabled: true,

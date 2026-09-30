@@ -16,7 +16,6 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import * as plugin from '../src/index.ts'
 import type { AtFileRuntime } from '../src/runtime.ts'
-import type { AtFileSettings } from '../src/contract.ts'
 import { AtFileSettingsSchema } from '../src/settings.ts'
 
 /** One structural Agent stub: only the session header the service reads. */
@@ -30,32 +29,24 @@ function originalOf(service: object): object {
   return original ?? service
 }
 
-/** A settings provider stub whose value is switchable per test. */
-function settingsProvider(read: () => AtFileSettings) {
-  let patch: Partial<AtFileSettings> = {}
+/** Full plugin Config with test overrides (settings ride the Config since dsh 0.2). */
+function configWith(overrides: Partial<plugin.Config>): plugin.Config {
   return {
-    register: () => ({
-      get: () => ({ ...read(), ...patch }),
-      watch: () => () => {},
-      update: async (next: Partial<AtFileSettings>) => { patch = { ...patch, ...next } },
-      replace: async () => {},
-    }),
+    maxIndexedFiles: 5000,
+    ignoreDirs: [...plugin.DEFAULT_IGNORE_DIRS],
+    enabled: true,
+    ignoreFiles: [...plugin.DEFAULT_IGNORE_FILES],
+    ignoreFilesConfigured: false,
+    workspaceIgnoreFiles: [],
+    ignorePastedMentions: true,
+    ...overrides,
   }
 }
 
 /** Mount the function-plugin module on a fresh context (harness test pattern). */
-async function mount(
-  ctx: Context,
-  config?: plugin.Config,
-  readSettings: () => AtFileSettings = () => ({
-    enabled: true,
-    ignoreFiles: [...plugin.DEFAULT_IGNORE_FILES],
-    workspaceIgnoreFiles: [],
-  }),
-) {
+async function mount(ctx: Context, config?: plugin.Config) {
   const registryFiber = ctx.plugin(TypertRegistry)
   await registryFiber
-  ctx.provide('settings', settingsProvider(readSettings))
   ctx.provide('agents', { roots: () => [] })
   const fiber = ctx.plugin({ inject: plugin.inject, apply: plugin.apply }, config)
   await fiber
@@ -140,7 +131,9 @@ describe('dsh-at-file host composition', () => {
       expect(runtime.getSettings()).toEqual({
         enabled: true,
         ignoreFiles: [...plugin.DEFAULT_IGNORE_FILES],
+        ignoreFilesConfigured: false,
         workspaceIgnoreFiles: [],
+        ignorePastedMentions: true,
       })
       expect(await runtime.updateSettings({
         field: 'ignoreFiles',
@@ -212,11 +205,7 @@ describe('dsh-at-file host composition', () => {
   it('search refuses while the settings switch is off', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-at-file-runtime-'))
     const ctx = new Context()
-    const fiber = await mount(ctx, undefined, () => ({
-      enabled: false,
-      ignoreFiles: [...plugin.DEFAULT_IGNORE_FILES],
-      workspaceIgnoreFiles: [],
-    }))
+    const fiber = await mount(ctx, configWith({ enabled: false }))
     try {
       const runtime = ctx.get('atFile') as AtFileRuntime
       await expect(runtime.search(agentWith(root), new AbortController().signal))
@@ -231,18 +220,15 @@ describe('dsh-at-file host composition', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-at-file-runtime-'))
     await writeFile(join(root, 'desktop.ini'), 'metadata\n')
     await writeFile(join(root, 'keep.txt'), 'keep\n')
-    let ignoreFiles: string[] = ['DESKTOP.INI']
     const ctx = new Context()
-    const fiber = await mount(ctx, undefined, () => ({
-      enabled: true,
-      ignoreFiles,
+    const fiber = await mount(ctx, configWith({
+      ignoreFiles: ['DESKTOP.INI'],
       ignoreFilesConfigured: true,
-      workspaceIgnoreFiles: [],
     }))
     try {
       const runtime = ctx.get('atFile') as AtFileRuntime
       expect((await runtime.search(agentWith(root), new AbortController().signal)).map(file => file.relative)).toEqual(['keep.txt'])
-      ignoreFiles = []
+      await runtime.updateSettings({ field: 'ignoreFiles', value: [] })
       expect((await runtime.search(agentWith(root), new AbortController().signal)).map(file => file.relative)).toEqual(['desktop.ini', 'keep.txt'])
     } finally {
       await fiber.dispose()
@@ -259,8 +245,7 @@ describe('dsh-at-file host composition', () => {
       await writeFile(join(root, 'keep.txt'), 'keep\n')
     }
     const ctx = new Context()
-    const fiber = await mount(ctx, undefined, () => ({
-      enabled: true,
+    const fiber = await mount(ctx, configWith({
       ignoreFiles: ['global.tmp'],
       workspaceIgnoreFiles: [{ workspace: first, ignoreFiles: ['LOCAL.TMP'] }],
     }))
@@ -281,6 +266,11 @@ describe('dsh-at-file host composition', () => {
     expect(plugin.Config({})).toEqual({
       maxIndexedFiles: 5000,
       ignoreDirs: [...plugin.DEFAULT_IGNORE_DIRS],
+      enabled: true,
+      ignoreFiles: [...plugin.DEFAULT_IGNORE_FILES],
+      ignoreFilesConfigured: false,
+      workspaceIgnoreFiles: [],
+      ignorePastedMentions: true,
     })
     expect(plugin.DEFAULT_IGNORE_FILES).toEqual(['desktop.ini', 'Thumbs.db', '.DS_Store'])
     expect(plugin.Config({ ignoreDirs: [] }).ignoreDirs).toEqual([])
